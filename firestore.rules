@@ -1,0 +1,37 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isInRoom(roomId) {
+      return isSignedIn() &&
+        request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.turnOrder;
+    }
+
+    match /rooms/{roomId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isInRoom(roomId);
+
+      match /players/{playerId} {
+        allow read: if isSignedIn();
+        // 본인 문서는 자유롭게, 남의 문서는 같은 방 참가자만(오염+2/탄소폭탄 등 효과 반영용)
+        allow create: if isSignedIn() && request.auth.uid == playerId;
+        allow update: if isSignedIn() &&
+          (request.auth.uid == playerId || isInRoom(roomId));
+      }
+
+      match /hands/{playerId} {
+        // 카드 내용은 본인만 읽을 수 있음 (핸드 비공개)
+        allow read: if isSignedIn() && request.auth.uid == playerId;
+        // 쓰기는 본인 또는 같은 방 참가자(오염+2/탄소폭탄 카드 효과로 상대 핸드에 카드 추가) 허용
+        allow create: if isSignedIn() && request.auth.uid == playerId;
+        allow update: if isSignedIn() &&
+          (request.auth.uid == playerId || isInRoom(roomId));
+      }
+    }
+  }
+}
